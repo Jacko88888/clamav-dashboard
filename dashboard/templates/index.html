@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="dashboard-action-token" content="{{ action_token }}">
+  <title>ClamAV Security Dashboard</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div><p class="eyebrow">ZimaOS Protection</p><h1>ClamAV Security Dashboard</h1><p class="subtitle">Live malware scanning with controlled quarantine and persistent evidence</p></div>
+      <div class="engine-badge" id="engineBadge"><span></span><b>Checking engine</b></div>
+    </header>
+
+    <section class="metrics">
+      <article class="metric"><span>Engine</span><strong id="engineState">Checking</strong><small id="engineVersion">ClamAV</small></article>
+      <article class="metric"><span>Scan status</span><strong id="scanState">Idle</strong><small id="scanPhase">Ready</small></article>
+      <article class="metric"><span>Folder size</span><strong id="folderSize">0 B</strong><small id="sizeProgress">0 B scanned</small></article>
+      <article class="metric danger"><span>Threats found</span><strong id="infectedCount">0</strong><small id="errorCount">0 errors</small></article>
+    </section>
+
+    <section class="panel storage-panel">
+      <div class="panel-heading"><div><p class="eyebrow">Automatic discovery</p><h2>ZimaOS storage folders</h2></div><button class="ghost" id="saveFoldersButton">Save approved folders</button></div>
+      <p class="notice">Select only user-data folders. AppData, Docker, VMs, databases, backups, snapshots, Borg repositories and system images are excluded automatically.</p>
+      <div id="storageList" class="storage-list"><div class="empty-state compact">Discovering mounted disks...</div></div>
+      <p class="notice" id="storageNotice"></p>
+    </section>
+
+    <section class="grid">
+      <article class="panel scanner">
+        <div class="panel-heading"><div><p class="eyebrow">Active job</p><h2>Folder scan</h2></div><span class="pill" id="jobPill">IDLE</span></div>
+        <label for="scanRoot">Approved folder</label>
+        <div class="controls"><select id="scanRoot"><option value="">Approve folders above first</option></select><button class="primary" id="startButton" disabled>Start scan</button><button class="secondary" id="cancelButton" disabled>Cancel</button></div>
+        <div class="progress-track"><div id="progressBar"></div></div>
+        <div class="progress-meta"><b id="progressPercent">0%</b><span id="timing">Elapsed 00:00</span></div>
+        <div class="current-file"><span>Current file</span><code id="currentFile">No scan running</code></div>
+        <div class="current-file folder-record"><span>Folders included in this scan</span><div id="folderList"><code>No scan recorded</code></div></div>
+        <div class="job-details six">
+          <div><span>Files</span><b id="detailScanned">0 / 0</b></div><div><span>Scanned size</span><b id="detailBytes">0 B</b></div><div><span>Remaining</span><b id="detailRemaining">0 B</b></div><div><span>Speed</span><b id="detailSpeed">0 B/s</b></div><div><span>Skipped</span><b id="detailSkipped">0</b></div><div><span>ETA</span><b id="detailEta">--</b></div>
+        </div>
+        <p class="notice" id="notice">Scanning does not modify files. Quarantine is always a separate confirmed action.</p>
+      </article>
+
+      <article class="panel detections">
+        <div class="panel-heading"><div><p class="eyebrow">Findings</p><h2>Detections</h2></div></div>
+        <div id="detectionList" class="empty-state">No threats detected.</div>
+      </article>
+    </section>
+
+    <section class="panel quarantine-panel">
+      <div class="panel-heading"><div><p class="eyebrow">Isolated threats</p><h2>Quarantine</h2></div><button class="ghost" id="refreshQuarantineButton">Refresh</button></div>
+      <div id="quarantineList" class="empty-state compact">No quarantined files.</div>
+    </section>
+
+    <section class="panel history-panel">
+      <div class="panel-heading"><div><p class="eyebrow">Persistent record</p><h2>Scan history</h2></div><button class="ghost" id="refreshButton">Refresh</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Started</th><th>Folder</th><th>Status</th><th>Files</th><th>Size</th><th>Threats</th><th>Errors</th><th></th></tr></thead><tbody id="historyBody"></tbody></table></div>
+      <div id="historyDetail" class="detail-drawer hidden"></div>
+    </section>
+    <footer>ClamAV Dashboard v{{ version }} · Automatic disk discovery · Confirmed quarantine actions</footer>
+  </main>
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>
