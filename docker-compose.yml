@@ -3,7 +3,7 @@ services:
     image: clamav/clamav:1.5_base
     restart: unless-stopped
     environment:
-      TZ: Australia/Sydney
+      TZ: ${TZ:-UTC}
       FRESHCLAM_CHECKS: "12"
       CLAMD_CONF_MaxThreads: "4"
       CLAMD_CONF_MaxFileSize: 512M
@@ -23,7 +23,7 @@ services:
     ports:
       - "8099:8080"
     environment:
-      TZ: Australia/Sydney
+      TZ: ${TZ:-UTC}
       CLAMAV_HOST: clamav-server
       CLAMAV_PORT: "3310"
       DATA_DIR: /data
