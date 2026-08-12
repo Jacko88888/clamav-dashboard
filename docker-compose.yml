@@ -1,0 +1,54 @@
+services:
+  clamav-server:
+    image: clamav/clamav:1.5_base
+    restart: unless-stopped
+    environment:
+      TZ: Australia/Sydney
+      FRESHCLAM_CHECKS: "12"
+      CLAMD_CONF_MaxThreads: "4"
+      CLAMD_CONF_MaxFileSize: 512M
+      CLAMD_CONF_MaxScanSize: 2G
+      CLAMD_CONF_StreamMaxLength: 512M
+    volumes:
+      - /DATA/AppData/clamav-dashboard/clamav:/var/lib/clamav
+    networks:
+      - clamav-security
+
+  clamav-dashboard:
+    image: ghcr.io/jacko88888/clamav-dashboard:0.2.1
+    restart: unless-stopped
+    depends_on:
+      clamav-server:
+        condition: service_healthy
+    ports:
+      - "8099:8080"
+    environment:
+      TZ: Australia/Sydney
+      CLAMAV_HOST: clamav-server
+      CLAMAV_PORT: "3310"
+      DATA_DIR: /data
+      MEDIA_ROOT: /host-media
+      MAX_STREAM_BYTES: "536870912"
+    volumes:
+      - /DATA/AppData/clamav-dashboard/data:/data
+      - /media:/host-media:rw
+    networks:
+      - clamav-security
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  clamav-security:
+
+x-casaos:
+  title:
+    custom: ClamAV Security Dashboard
+    en_US: ClamAV Security Dashboard
+  icon: https://raw.githubusercontent.com/Cisco-Talos/clamav/main/logo.png
+  main: clamav-dashboard
+  scheme: http
+  port_map: "8099"
+  index: /
