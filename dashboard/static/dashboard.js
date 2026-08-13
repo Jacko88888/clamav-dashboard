@@ -1,10 +1,25 @@
 let activeId = null;
 let approvedFolders = [];
 let selectedRoot = "";
+let quarantineItems = [];
+let displayedDetections = [];
+let detectionActionsAllowed = false;
 
 const $ = id => document.getElementById(id);
 const actionToken = document.querySelector('meta[name="dashboard-action-token"]').content;
 const actionHeaders = {"Content-Type": "application/json", "X-Dashboard-Token": actionToken};
+
+function setFolderSaveState(state) {
+  const button = $("saveFoldersButton");
+  button.classList.toggle("saved", state === "saved");
+  button.classList.toggle("saving", state === "saving");
+  button.style.backgroundColor = state === "saved" ? "#15803d" : "";
+  button.style.borderColor = state === "saved" ? "#22c55e" : "";
+  button.style.color = state === "saved" ? "#ffffff" : "";
+  button.style.boxShadow = state === "saved" ? "0 0 0 3px rgba(34, 197, 94, .22)" : "";
+  button.textContent = state === "saved" ? "Approved folders saved" :
+    state === "saving" ? "Saving..." : "Save approved folders";
+}
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, character => ({
@@ -70,8 +85,13 @@ async function loadStorage() {
             </label>`).join("")}
         </div>
       </section>`).join("");
+    target.querySelectorAll("[data-folder]").forEach(input => {
+      input.addEventListener("change", () => setFolderSaveState("changed"));
+    });
+    setFolderSaveState(approvedFolders.length ? "saved" : "changed");
     renderScanOptions();
   } catch (error) {
+    setFolderSaveState("changed");
     $("storageNotice").textContent = error.message;
   }
 }
@@ -96,6 +116,8 @@ function renderScanOptions(preferred = "") {
 
 async function saveApprovedFolders() {
   const approved = [...document.querySelectorAll("[data-folder]:checked")].map(input => input.dataset.folder);
+  setFolderSaveState("saving");
+  $("saveFoldersButton").disabled = true;
   $("storageNotice").textContent = "Saving approved folders...";
   try {
     const data = await jsonFetch("/api/storage/approved", {
@@ -105,9 +127,13 @@ async function saveApprovedFolders() {
     selectedRoot = approvedFolders[0] || "";
     renderScanOptions(selectedRoot);
     await loadStorage();
+    setFolderSaveState("saved");
     $("storageNotice").textContent = `Saved ${approvedFolders.length} approved folder${approvedFolders.length === 1 ? "" : "s"}.`;
   } catch (error) {
+    setFolderSaveState("changed");
     $("storageNotice").textContent = error.message;
+  } finally {
+    $("saveFoldersButton").disabled = activeId !== null;
   }
 }
 
@@ -121,6 +147,8 @@ function renderFolderList(folders) {
 }
 
 function renderDetections(items, allowActions) {
+  displayedDetections = items || [];
+  detectionActionsAllowed = allowActions;
   const target = $("detectionList");
   if (!items || !items.length) {
     target.className = "empty-state";
@@ -128,12 +156,23 @@ function renderDetections(items, allowActions) {
     return;
   }
   target.className = "";
-  target.innerHTML = items.map(item => `
-    <div class="finding">
+  target.innerHTML = items.map(item => {
+    const record = quarantineItems.find(entry =>
+      entry.original_path === item.file && entry.signature === item.signature
+    );
+    let action = "<small>Quarantine becomes available when this scan finishes.</small>";
+    if (allowActions && record?.status === "quarantined") {
+      action = '<small class="finding-status quarantined">Quarantined</small>';
+    } else if (allowActions && record?.status === "deleted") {
+      action = '<small class="finding-status deleted">Deleted after quarantine</small>';
+    } else if (allowActions) {
+      action = `<button class="danger-button" data-quarantine='${escapeHtml(JSON.stringify(item))}'>Quarantine</button>`;
+    }
+    return `<div class="finding">
       <b>${escapeHtml(item.signature)}</b><code>${escapeHtml(item.file)}</code>
-      <div class="finding-meta">${bytes(item.size)}</div>
-      ${allowActions ? `<button class="danger-button" data-quarantine='${escapeHtml(JSON.stringify(item))}'>Quarantine</button>` : "<small>Quarantine becomes available when this scan finishes.</small>"}
-    </div>`).join("");
+      <div class="finding-meta">${bytes(item.size)}</div>${action}
+    </div>`;
+  }).join("");
 }
 
 function renderJob(job, last = null) {
@@ -235,6 +274,10 @@ async function quarantineDetection(item) {
 async function loadQuarantine() {
   try {
     const data = await jsonFetch("/api/quarantine");
+    quarantineItems = data.items;
+    if (displayedDetections.length) {
+      renderDetections(displayedDetections, detectionActionsAllowed);
+    }
     const target = $("quarantineList");
     if (!data.items.length) {
       target.className = "empty-state compact";
