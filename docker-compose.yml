@@ -15,7 +15,7 @@ services:
       - clamav-security
 
   clamav-dashboard:
-    image: ghcr.io/jacko88888/clamav-dashboard:0.2.1
+    image: ghcr.io/jacko88888/clamav-dashboard:0.2.3
     restart: unless-stopped
     depends_on:
       clamav-server:
