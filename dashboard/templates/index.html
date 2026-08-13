@@ -6,6 +6,28 @@
   <meta name="dashboard-action-token" content="{{ action_token }}">
   <title>ClamAV Security Dashboard</title>
   <link rel="stylesheet" href="/static/dashboard.css">
+  <style>
+    #saveFoldersButton.saved {
+      background: var(--green);
+      border-color: var(--green);
+      color: #04150c;
+      box-shadow: 0 0 0 3px rgba(49, 209, 124, .14);
+    }
+    #saveFoldersButton.saving {
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+    .finding-status {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-weight: 750;
+    }
+    .finding-status.quarantined { color: var(--amber); }
+    .finding-status.deleted { color: var(--green); }
+  </style>
 </head>
 <body>
   <main class="shell">
