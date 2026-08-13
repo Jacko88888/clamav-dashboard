@@ -36,9 +36,9 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/jacko88888/clamav-dashboard:0.2.1
+            ghcr.io/jacko88888/clamav-dashboard:0.2.3
             ghcr.io/jacko88888/clamav-dashboard:latest
           labels: |
             org.opencontainers.image.source=https://github.com/Jacko88888/clamav-dashboard
-            org.opencontainers.image.version=0.2.1
+            org.opencontainers.image.version=0.2.3
             org.opencontainers.image.licenses=MIT
