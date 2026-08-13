@@ -6,6 +6,7 @@ A browser dashboard for ClamAV on ZimaOS with automatic storage discovery, live 
 
 - Discovers each user's ZimaOS disks beneath `/media`
 - Requires explicit approval before a folder can be scanned
+- Shows a green confirmation state after approved folders are saved
 - Excludes AppData, Docker, databases, virtual machines, backups, snapshots, Borg repositories, restore folders, trash and system metadata
 - Shows exact folders included in every scan
 - Measures file count and total folder size before scanning
@@ -14,6 +15,7 @@ A browser dashboard for ClamAV on ZimaOS with automatic storage discovery, live 
 - Quarantines only after a confirmed user action
 - Validates the recorded path and SHA-256 digest before restoring
 - Requires `DELETE PERMANENTLY` before deleting a quarantined file
+- Shows quarantined and deleted states instead of leaving stale action buttons
 
 Scanning is read-only. Files are never removed automatically.
 
@@ -41,7 +43,7 @@ The ClamAV daemon is not published to the host network. Only the dashboard port 
 ## Architecture
 
 - `clamav/clamav:1.5_base` provides the official ClamAV daemon and signature updates.
-- `ghcr.io/jacko88888/clamav-dashboard:0.2.1` provides the dashboard.
+- `ghcr.io/jacko88888/clamav-dashboard:0.2.3` provides the dashboard.
 - A private Compose network connects the two services.
 
 ## Current limitation
