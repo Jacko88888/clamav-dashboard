@@ -15,7 +15,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 
-APP_VERSION = "0.2.1"
+APP_VERSION = "0.2.3"
 CLAMAV_HOST = os.getenv("CLAMAV_HOST", "clamav-server")
 CLAMAV_PORT = int(os.getenv("CLAMAV_PORT", "3310"))
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
