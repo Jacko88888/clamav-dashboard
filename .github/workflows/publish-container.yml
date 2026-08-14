@@ -19,6 +19,16 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run regression tests
+        run: |
+          python -m pip install -r dashboard/requirements.txt
+          APP_SOURCE=dashboard/app.py python -m unittest discover -s dashboard/tests -v
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -36,9 +46,9 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/jacko88888/clamav-dashboard:0.2.3
+            ghcr.io/jacko88888/clamav-dashboard:0.2.4
             ghcr.io/jacko88888/clamav-dashboard:latest
           labels: |
             org.opencontainers.image.source=https://github.com/Jacko88888/clamav-dashboard
-            org.opencontainers.image.version=0.2.3
+            org.opencontainers.image.version=0.2.4
             org.opencontainers.image.licenses=MIT

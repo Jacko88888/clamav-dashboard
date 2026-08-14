@@ -69,7 +69,7 @@ async function loadStorage() {
     approvedFolders = data.approved;
     const target = $("storageList");
     if (!data.disks.length) {
-      target.innerHTML = '<div class="empty-state compact">No ZimaOS storage disks detected under /media.</div>';
+      target.innerHTML = '<div class="empty-state compact">No ZimaOS storage disks detected under /media or /DATA.</div>';
       renderScanOptions();
       return;
     }
@@ -81,7 +81,7 @@ async function loadStorage() {
             <label class="folder-choice ${folder.excluded ? "excluded" : ""} ${folder.whole_disk ? "whole-disk" : ""}">
               <input type="checkbox" data-folder="${escapeHtml(folder.path)}"
                 ${folder.approved ? "checked" : ""} ${folder.excluded ? "disabled" : ""}>
-              <span><b>${escapeHtml(folder.name)}</b><small>${folder.excluded ? "Excluded by safety policy" : escapeHtml(folder.path)}</small></span>
+              <span><b>${escapeHtml(folder.name)}</b><small>${folder.excluded ? escapeHtml(folder.exclusion_reason || "Excluded by safety policy") : escapeHtml(folder.path)}</small></span>
             </label>`).join("")}
         </div>
       </section>`).join("");
@@ -256,7 +256,7 @@ async function showHistory(id) {
       <div class="panel-heading"><h3>Scan #${scan.id}: ${escapeHtml(historyFolderLabel(scan))}</h3><button class="mini-button" id="closeDetail">Close</button></div>
       <h4>Folders scanned</h4><div class="recorded-folders">${folders}</div>
       <div class="detail-grid"><div><span>Total size</span><b>${bytes(scan.bytes_total)}</b></div><div><span>Scanned</span><b>${bytes(scan.bytes_scanned)}</b></div><div><span>Skipped</span><b>${scan.skipped}</b></div><div><span>Errors</span><b>${scan.errors}</b></div></div>
-      <h4>Skipped files</h4>${scan.skipped_details.length ? scan.skipped_details.map(item => `<code>${escapeHtml(item.file)}: ${escapeHtml(item.reason)}</code>`).join("") : "<p>None</p>"}
+      <h4>Skipped files and folders</h4>${scan.skipped_details.length ? scan.skipped_details.map(item => `<code>${escapeHtml(item.file || item.folder || "Unknown path")}: ${escapeHtml(item.reason)}</code>`).join("") : "<p>None</p>"}
       <h4>Errors</h4>${scan.error_details.length ? scan.error_details.map(item => `<code>${escapeHtml(item.file)}: ${escapeHtml(item.error)}</code>`).join("") : "<p>None</p>"}`;
     $("closeDetail").onclick = () => detail.classList.add("hidden");
   } catch (error) { alert(error.message); }
