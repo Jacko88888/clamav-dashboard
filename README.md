@@ -4,19 +4,30 @@
 
 Tested on ZimaCube Pro and ZimaBoard.
 
+## What changed in v0.2.4
+
+- Storage discovery now skips individual cloud/FUSE paths that return I/O errors instead of failing `/api/storage`
+- The internal ZimaOS data disk is available as `ZimaOS-HD` through a dedicated `/DATA` mount
+- Quarantine records the original UID, GID and mode; restore reapplies and verifies that metadata before completing
+- Safety exclusions are exact and every excluded directory is recorded in scan details
+- The documented and packaged dashboard port is consistently `8099`
+
+Thank you to ZimaOS community member Lintux for the detailed v0.2.3 review and reproducible findings.
+
 ## Features
 
-- Automatically discovers each user's ZimaOS disks and folders beneath `/media`
+- Automatically discovers each user's attached disks beneath `/media` and the internal ZimaOS data disk beneath `/DATA`
 - Requires explicit approval before a folder can be scanned
 - Shows a clearly green **Approved folders saved** confirmation state
-- Excludes AppData, Docker data, databases, virtual machines, backups, snapshots, Borg repositories, restore folders, trash and system metadata
+- Uses exact safety exclusions for AppData, Docker data, databases, virtual machines, backups, snapshots, Borg repositories, trash and system metadata without hiding benign names such as `Restore Photos` or `Docker Course`
+- Records every skipped file and directory, including the exclusion reason
 - Shows the exact folders included in every scan
 - Measures file count and total folder size before scanning
 - Shows the current file, scanned bytes, remaining bytes, speed, elapsed time and ETA
 - Stores persistent scan history, detections, skipped files and errors
 - Displays the detected signature and exact affected path
 - Quarantines only after a separate confirmed user action
-- Records the original path, size, signature and SHA-256 digest
+- Records the original path, size, signature, SHA-256 digest, owner, group and mode
 - Validates the recorded path and SHA-256 digest before restoring
 - Restores a quarantined file to its original location only after confirmation
 - Requires `DELETE PERMANENTLY` before deleting a quarantined file
@@ -54,7 +65,7 @@ services:
       - clamav-security
 
   clamav-dashboard:
-    image: ghcr.io/jacko88888/clamav-dashboard:0.2.3
+    image: ghcr.io/jacko88888/clamav-dashboard:0.2.4
     restart: unless-stopped
     depends_on:
       clamav-server:
@@ -67,10 +78,12 @@ services:
       CLAMAV_PORT: "3310"
       DATA_DIR: /data
       MEDIA_ROOT: /host-media
+      HOST_DATA_ROOT: /host-data
       MAX_STREAM_BYTES: "536870912"
     volumes:
       - /DATA/AppData/clamav-dashboard/data:/data
       - /media:/host-media:rw
+      - /DATA:/host-data:rw
     networks:
       - clamav-security
     read_only: true
@@ -109,19 +122,20 @@ Persistent application data and quarantine evidence are stored under:
 
 ## Security model
 
-The dashboard mounts `/media` at `/host-media` with write access because confirmed quarantine and restore operations must move files from and back to their original locations.
+The dashboard mounts `/media` at `/host-media` and `/DATA` at `/host-data` with write access because confirmed quarantine and restore operations must move files from and back to their original locations. Application data and other exact safety exclusions are never offered for approval.
 
 - Ordinary scanning is non-destructive
 - Only explicitly approved folders can be scanned
 - Quarantine requires a separate confirmed action
 - Restore validates the original path and recorded SHA-256 digest
+- Restore reapplies the recorded Unix owner, group and file mode
 - Permanent deletion requires explicit confirmation
 - The ClamAV daemon is isolated on the private Compose network and is not published to the host
 - Only the dashboard web port is exposed
 
 ## EICAR validation
 
-Version 0.2.3 completed a controlled end-to-end test using the harmless industry-standard EICAR antivirus test file.
+Version 0.2.3 completed a controlled end-to-end test using the harmless industry-standard EICAR antivirus test file. Version 0.2.4 retains that workflow and adds ownership-preserving restore.
 
 The validation confirmed:
 
@@ -136,9 +150,9 @@ The validation confirmed:
 ## Architecture
 
 - `clamav/clamav:1.5_base` provides the official ClamAV daemon and signature updates
-- `ghcr.io/jacko88888/clamav-dashboard:0.2.3` provides the ZimaOS dashboard
+- `ghcr.io/jacko88888/clamav-dashboard:0.2.4` provides the ZimaOS dashboard
 - A private Compose network connects the two services
-- ZimaOS storage is discovered from the mounted `/media` hierarchy
+- ZimaOS storage is discovered from the mounted `/media` hierarchy and internal `/DATA` disk
 
 ## Current limitation
 
@@ -155,7 +169,7 @@ https://github.com/Jacko88888/clamav-dashboard
 Container image:
 
 ```text
-ghcr.io/jacko88888/clamav-dashboard:0.2.3
+ghcr.io/jacko88888/clamav-dashboard:0.2.4
 ```
 
 ## License

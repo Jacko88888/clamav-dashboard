@@ -15,7 +15,7 @@ services:
       - clamav-security
 
   clamav-dashboard:
-    image: ghcr.io/jacko88888/clamav-dashboard:0.2.3
+    image: ghcr.io/jacko88888/clamav-dashboard:0.2.4
     restart: unless-stopped
     depends_on:
       clamav-server:
@@ -28,10 +28,12 @@ services:
       CLAMAV_PORT: "3310"
       DATA_DIR: /data
       MEDIA_ROOT: /host-media
+      HOST_DATA_ROOT: /host-data
       MAX_STREAM_BYTES: "536870912"
     volumes:
       - /DATA/AppData/clamav-dashboard/data:/data
       - /media:/host-media:rw
+      - /DATA:/host-data:rw
     networks:
       - clamav-security
     read_only: true

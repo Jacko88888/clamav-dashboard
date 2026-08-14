@@ -5,6 +5,7 @@ import secrets
 import shutil
 import socket
 import sqlite3
+import stat
 import struct
 import threading
 import time
@@ -15,7 +16,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 
-APP_VERSION = "0.2.3"
+APP_VERSION = "0.2.4"
 CLAMAV_HOST = os.getenv("CLAMAV_HOST", "clamav-server")
 CLAMAV_PORT = int(os.getenv("CLAMAV_PORT", "3310"))
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
@@ -23,6 +24,8 @@ QUARANTINE_DIR = DATA_DIR / "quarantine"
 DB_PATH = DATA_DIR / "clamav-dashboard.db"
 CONFIG_PATH = DATA_DIR / "config.json"
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", "/host-media"))
+HOST_DATA_ROOT = Path(os.getenv("HOST_DATA_ROOT", "/host-data"))
+HOST_DATA_LABEL = "ZimaOS-HD"
 MAX_STREAM_BYTES = int(os.getenv("MAX_STREAM_BYTES", str(512 * 1024 * 1024)))
 SOCKET_TIMEOUT = int(os.getenv("CLAMAV_SOCKET_TIMEOUT", "180"))
 MAX_DETAIL_ITEMS = 250
@@ -36,9 +39,6 @@ EXCLUDED_NAMES = {
     "zimabrain-full-snapshots", "zimabrain-full-restore-tests",
 }
 EXCLUDED_SUFFIXES = (".img", ".img.gz", ".qcow2", ".vdi", ".vmdk")
-EXCLUDED_TERMS = (
-    "backup", "snapshot", "borg", "restore", "database", "appdata", "docker",
-)
 
 app = Flask(__name__)
 job_lock = threading.Lock()
@@ -81,51 +81,91 @@ def save_config(config):
     temporary.replace(CONFIG_PATH)
 
 
-def is_excluded_name(name):
+def exclusion_reason(name):
     lowered = name.casefold()
-    return (
-        lowered in EXCLUDED_NAMES
-        or lowered.endswith(EXCLUDED_SUFFIXES)
-        or any(term in lowered for term in EXCLUDED_TERMS)
-    )
+    if lowered in EXCLUDED_NAMES:
+        return "Excluded system or application-data name"
+    if lowered.endswith(EXCLUDED_SUFFIXES):
+        return "Excluded disk-image file type"
+    return None
 
 
-def relative_media_path(path):
-    return path.relative_to(MEDIA_ROOT).as_posix()
+def is_excluded_name(name):
+    return exclusion_reason(name) is not None
 
 
-def safe_media_path(relative, require_exists=True):
+def storage_roots():
+    return ((MEDIA_ROOT, None), (HOST_DATA_ROOT, HOST_DATA_LABEL))
+
+
+def relative_storage_path(path):
+    resolved = path.resolve(strict=False)
+    for root, prefix in storage_roots():
+        try:
+            relative = resolved.relative_to(root.resolve(strict=True)).as_posix()
+        except (OSError, ValueError):
+            continue
+        if prefix:
+            return prefix if relative == "." else f"{prefix}/{relative}"
+        return relative
+    raise ValueError(f"Path is outside configured storage roots: {path}")
+
+
+def safe_storage_path(relative, require_exists=True):
     if not isinstance(relative, str) or not relative or relative.startswith("/"):
         return None
-    candidate = MEDIA_ROOT.joinpath(*Path(relative).parts)
+    parts = Path(relative).parts
+    if parts and parts[0] == HOST_DATA_LABEL:
+        root = HOST_DATA_ROOT
+        parts = parts[1:]
+    else:
+        root = MEDIA_ROOT
+    candidate = root.joinpath(*parts)
     try:
-        root = MEDIA_ROOT.resolve(strict=True)
+        resolved_root = root.resolve(strict=True)
         resolved = candidate.resolve(strict=require_exists)
-        resolved.relative_to(root)
+        resolved.relative_to(resolved_root)
     except (OSError, ValueError):
         return None
     return candidate
 
 
+def safe_marker_parents(root, max_depth=3):
+    parents = []
+    stack = [(root, 0)]
+    while stack:
+        directory, depth = stack.pop()
+        try:
+            with os.scandir(directory) as entries:
+                children = list(entries)
+        except OSError:
+            continue
+        for entry in children:
+            if entry.name == ".zimaos_storage.json":
+                parents.append(directory)
+                continue
+            if depth >= max_depth:
+                continue
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    stack.append((Path(entry.path), depth + 1))
+            except OSError:
+                continue
+    return parents
+
+
 def discover_disk_roots():
     roots = []
     seen = set()
-    if not MEDIA_ROOT.is_dir():
-        return roots
-    marker_patterns = (
-        "*/.zimaos_storage.json",
-        "*/*/.zimaos_storage.json",
-        "*/*/*/.zimaos_storage.json",
-    )
-    markers = []
-    for pattern in marker_patterns:
-        markers.extend(MEDIA_ROOT.glob(pattern))
-    candidates = [marker.parent for marker in markers]
-    if not candidates:
-        candidates = [path for path in MEDIA_ROOT.iterdir() if path.is_dir()]
+    candidates = safe_marker_parents(MEDIA_ROOT) if MEDIA_ROOT.is_dir() else []
+    if not candidates and MEDIA_ROOT.is_dir():
+        try:
+            candidates = [path for path in MEDIA_ROOT.iterdir() if path.is_dir() and not path.is_symlink()]
+        except OSError:
+            candidates = []
     for path in sorted(candidates, key=lambda item: str(item).casefold()):
         try:
-            relative = relative_media_path(path)
+            relative = relative_storage_path(path)
             resolved = path.resolve(strict=True)
         except (OSError, ValueError):
             continue
@@ -133,13 +173,24 @@ def discover_disk_roots():
             continue
         seen.add(resolved)
         roots.append({"id": hashlib.sha256(relative.encode()).hexdigest()[:12], "label": relative, "path": relative})
+    if HOST_DATA_ROOT.is_dir():
+        try:
+            resolved = HOST_DATA_ROOT.resolve(strict=True)
+            if resolved not in seen:
+                roots.append({
+                    "id": hashlib.sha256(HOST_DATA_LABEL.encode()).hexdigest()[:12],
+                    "label": HOST_DATA_LABEL,
+                    "path": HOST_DATA_LABEL,
+                })
+        except OSError:
+            pass
     return roots
 
 
 def approved_paths():
     output = []
     for relative in load_config()["approved"]:
-        path = safe_media_path(relative)
+        path = safe_storage_path(relative)
         if path and path.is_dir() and not any(is_excluded_name(part) for part in Path(relative).parts):
             output.append((relative, path))
     return output
@@ -206,6 +257,9 @@ def init_db():
             )
             """
         )
+        add_column(connection, "quarantine", "original_uid INTEGER")
+        add_column(connection, "quarantine", "original_gid INTEGER")
+        add_column(connection, "quarantine", "original_mode INTEGER")
 
 
 def clamd_command(command, terminator=b"\0"):
@@ -267,9 +321,15 @@ def allowed_scan_path(path):
 
 def allowed_restore_path(path):
     candidate = path.resolve(strict=False)
-    try:
-        relative = candidate.relative_to(MEDIA_ROOT.resolve(strict=True))
-    except (ValueError, OSError):
+    relative = None
+    for root, prefix in storage_roots():
+        try:
+            local = candidate.relative_to(root.resolve(strict=True))
+            relative = Path(prefix, local) if prefix else local
+            break
+        except (ValueError, OSError):
+            continue
+    if relative is None:
         return False
     if any(is_excluded_name(part) for part in relative.parts):
         return False
@@ -304,7 +364,7 @@ class ScanJob:
         self.root_key = root_key
         self.label = label
         self.root_paths = root_paths
-        self.folders = [relative_media_path(path) for path in root_paths]
+        self.folders = [relative_storage_path(path) for path in root_paths]
         self.phase = "queued"
         self.status = "running"
         self.current_file = ""
@@ -368,7 +428,19 @@ def enumerate_files(job):
     files = []
     for selected_root in job.root_paths:
         for current_root, directories, filenames in os.walk(selected_root, followlinks=False):
-            directories[:] = [name for name in sorted(directories) if not is_excluded_name(name)]
+            allowed_directories = []
+            for name in sorted(directories):
+                reason = exclusion_reason(name)
+                if reason:
+                    job.skipped += 1
+                    record_limited(job.skipped_details, {
+                        "folder": str(Path(current_root) / name),
+                        "kind": "directory",
+                        "reason": reason,
+                    })
+                else:
+                    allowed_directories.append(name)
+            directories[:] = allowed_directories
             filenames.sort()
             job.directories_indexed += 1
             if job.cancel_event.is_set():
@@ -378,7 +450,11 @@ def enumerate_files(job):
                 job.current_file = str(path)
                 if is_excluded_name(filename):
                     job.skipped += 1
-                    record_limited(job.skipped_details, {"file": str(path), "reason": "Excluded by safety policy"})
+                    record_limited(job.skipped_details, {
+                        "file": str(path),
+                        "kind": "file",
+                        "reason": exclusion_reason(filename),
+                    })
                     continue
                 try:
                     if path.is_symlink() or not path.is_file():
@@ -510,7 +586,7 @@ def storage_discovery():
     approved = set(load_config()["approved"])
     disks = []
     for disk in discover_disk_roots():
-        root = safe_media_path(disk["path"])
+        root = safe_storage_path(disk["path"])
         folders = [{
             "name": "Entire disk (safe exclusions applied)",
             "path": disk["path"],
@@ -524,19 +600,31 @@ def storage_discovery():
             except OSError:
                 children = []
             for child in children:
-                if not child.is_dir() or child.is_symlink():
+                try:
+                    is_directory = child.is_dir()
+                    is_link = child.is_symlink()
+                except OSError:
                     continue
-                relative = relative_media_path(child)
-                excluded = is_excluded_name(child.name)
+                if not is_directory or is_link:
+                    continue
+                relative = relative_storage_path(child)
+                reason = exclusion_reason(child.name)
+                excluded = reason is not None
                 folders.append({
                     "name": child.name,
                     "path": relative,
                     "excluded": excluded,
+                    "exclusion_reason": reason,
                     "approved": relative in approved,
                     "whole_disk": False,
                 })
         disks.append({**disk, "folders": folders})
-    return jsonify({"media_root": str(MEDIA_ROOT), "disks": disks, "approved": sorted(approved)})
+    return jsonify({
+        "media_root": str(MEDIA_ROOT),
+        "host_data_root": str(HOST_DATA_ROOT),
+        "disks": disks,
+        "approved": sorted(approved),
+    })
 
 
 @app.put("/api/storage/approved")
@@ -549,7 +637,7 @@ def update_approved_storage():
         return jsonify({"error": "Folder approvals cannot change during a scan"}), 409
     validated = []
     for relative in requested:
-        path = safe_media_path(relative)
+        path = safe_storage_path(relative)
         if not path or not path.is_dir():
             return jsonify({"error": f"Folder is unavailable: {relative}"}), 409
         if any(is_excluded_name(part) for part in Path(relative).parts):
@@ -668,16 +756,22 @@ def quarantine_file():
     source = Path(source_text)
     if not allowed_scan_path(source) or not source.is_file():
         return jsonify({"error": "Detected file is unavailable or outside approved folders"}), 409
-    size = source.stat().st_size
+    source_stat = source.stat()
+    size = source_stat.st_size
+    original_uid = source_stat.st_uid
+    original_gid = source_stat.st_gid
+    original_mode = stat.S_IMODE(source_stat.st_mode)
     digest = file_sha256(source)
     destination = QUARANTINE_DIR / f"{uuid.uuid4().hex}.quarantine"
     shutil.move(str(source), str(destination))
     with db_connection() as connection:
         cursor = connection.execute(
             """INSERT INTO quarantine
-            (scan_id, original_path, quarantine_path, signature, sha256, size_bytes, status, quarantined_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'quarantined', ?)""",
-            (scan_id, source_text, str(destination), signature, digest, size, utc_now()),
+            (scan_id, original_path, quarantine_path, signature, sha256, size_bytes, status, quarantined_at,
+             original_uid, original_gid, original_mode)
+            VALUES (?, ?, ?, ?, ?, ?, 'quarantined', ?, ?, ?, ?)""",
+            (scan_id, source_text, str(destination), signature, digest, size, utc_now(),
+             original_uid, original_gid, original_mode),
         )
         item_id = cursor.lastrowid
     return jsonify({"ok": True, "id": item_id, "sha256": digest}), 201
@@ -699,7 +793,26 @@ def restore_file(item_id):
         return jsonify({"error": "Original parent folder no longer exists"}), 409
     if file_sha256(source) != row["sha256"]:
         return jsonify({"error": "Quarantined file integrity check failed"}), 409
-    shutil.move(str(source), str(destination))
+    try:
+        shutil.copy2(source, destination)
+        if row["original_uid"] is not None and row["original_gid"] is not None:
+            os.chown(destination, row["original_uid"], row["original_gid"])
+        if row["original_mode"] is not None:
+            os.chmod(destination, row["original_mode"])
+        restored = destination.stat()
+        if row["original_uid"] is not None and restored.st_uid != row["original_uid"]:
+            raise OSError("Restored file owner verification failed")
+        if row["original_gid"] is not None and restored.st_gid != row["original_gid"]:
+            raise OSError("Restored file group verification failed")
+        if row["original_mode"] is not None and stat.S_IMODE(restored.st_mode) != row["original_mode"]:
+            raise OSError("Restored file mode verification failed")
+        source.unlink()
+    except OSError as exc:
+        try:
+            destination.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return jsonify({"error": f"Restore metadata verification failed: {exc}"}), 409
     with db_connection() as connection:
         connection.execute("UPDATE quarantine SET status = 'restored', restored_at = ? WHERE id = ?", (utc_now(), item_id))
     return jsonify({"ok": True})
